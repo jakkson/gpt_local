@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+chroma_db/
+documents/
+*.egg-info/
+dist/
+build/
+.token_cache.json
+venv/
+.venv/
