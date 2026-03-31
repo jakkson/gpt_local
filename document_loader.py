@@ -1,6 +1,7 @@
 """
 Batch document loader - reads PDF, DOCX, TXT, CSV, XLSX, PPTX, HTML, EML, MD
 and image files (via OCR) and converts them to plain text for indexing.
+Skips Dropbox online-only / offline placeholder files.
 """
 
 import csv
@@ -8,6 +9,7 @@ import email
 import io
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Generator
 
@@ -16,6 +18,35 @@ import chardet
 from config import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
+
+# macOS UF_DATALESS flag — set on cloud-only placeholder files (Dropbox, iCloud)
+_UF_DATALESS = 0x00000040
+
+
+def is_file_local(file_path: Path) -> bool:
+    """
+    Check if a file is actually available on disk (not a Dropbox/iCloud
+    online-only placeholder). Returns False for offline files.
+    """
+    try:
+        st = file_path.stat()
+
+        # macOS: check the dataless flag (cloud-only placeholder)
+        if hasattr(st, "st_flags") and (st.st_flags & _UF_DATALESS):
+            return False
+
+        # Skip zero-byte files
+        if st.st_size == 0:
+            return False
+
+        # Safety: try reading 1 byte to confirm the file is readable
+        with open(file_path, "rb") as f:
+            f.read(1)
+
+        return True
+
+    except OSError:
+        return False
 
 
 class Document:
@@ -225,6 +256,10 @@ def load_single_file(file_path: Path) -> Document | None:
         logger.warning(f"Unsupported file type: {ext} ({file_path.name})")
         return None
 
+    if not is_file_local(file_path):
+        logger.info(f"Skipping offline file: {file_path.name}")
+        return None
+
     try:
         loader = LOADERS[ext]
         text = loader(file_path)
@@ -240,18 +275,32 @@ def load_single_file(file_path: Path) -> Document | None:
         }
         return Document(text=text.strip(), metadata=metadata)
 
+    except OSError as e:
+        logger.info(f"Skipping unavailable file: {file_path.name} ({e})")
+        return None
     except Exception as e:
         logger.error(f"Failed to load {file_path.name}: {e}")
         return None
 
 
 def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
-    """Find all supported files in a directory."""
+    """Find all supported files in a directory, skipping offline/cloud-only files."""
     files = []
+    skipped = 0
     pattern = "**/*" if recursive else "*"
     for path in directory.glob(pattern):
-        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
-            files.append(path)
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        if path.name.startswith("."):
+            continue
+        if not is_file_local(path):
+            skipped += 1
+            continue
+        files.append(path)
+    if skipped:
+        logger.info(f"Skipped {skipped} offline/cloud-only files in {directory}")
     return sorted(files)
 
 

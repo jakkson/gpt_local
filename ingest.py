@@ -45,8 +45,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+BATCH_SIZE = 50
+
+
 def ingest_paths(store: LocalVectorStore, paths: list[Path]) -> int:
-    """Ingest documents from given paths into the vector store."""
+    """Ingest documents from given paths into the vector store, saving every BATCH_SIZE docs."""
     total_files = 0
     for p in paths:
         if p.is_dir():
@@ -58,20 +61,38 @@ def ingest_paths(store: LocalVectorStore, paths: list[Path]) -> int:
         logger.warning("No supported files found.")
         return 0
 
-    logger.info(f"Found {total_files} files to process...")
+    logger.info(f"Found {total_files} files to process (saving every {BATCH_SIZE} docs)...")
 
-    docs = []
-    for doc in tqdm(load_documents(paths), total=total_files, desc="Loading files"):
-        docs.append(doc)
+    total_added = 0
+    batch = []
+    processed = 0
 
-    if not docs:
-        logger.warning("No documents could be parsed.")
-        return 0
+    for doc in tqdm(load_documents(paths), total=total_files, desc="Ingesting"):
+        batch.append(doc)
+        processed += 1
 
-    logger.info(f"Parsed {len(docs)} documents. Indexing into vector store...")
-    added = store.add_documents(docs)
-    logger.info(f"Done! Added {added} new documents.")
-    return added
+        if len(batch) >= BATCH_SIZE:
+            try:
+                added = store.add_documents(batch)
+                total_added += added
+                logger.info(
+                    f"Batch saved: +{added} docs | "
+                    f"Total: {total_added} added, {processed}/{total_files} processed"
+                )
+            except Exception as e:
+                logger.error(f"Batch save failed: {e} — skipping {len(batch)} docs")
+            batch = []
+
+    if batch:
+        try:
+            added = store.add_documents(batch)
+            total_added += added
+            logger.info(f"Final batch saved: +{added} docs")
+        except Exception as e:
+            logger.error(f"Final batch save failed: {e}")
+
+    logger.info(f"Done! Added {total_added} new documents from {processed} files.")
+    return total_added
 
 
 def ingest_outlook(store: LocalVectorStore, days: int, max_emails: int) -> int:
