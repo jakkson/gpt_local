@@ -64,14 +64,28 @@ class LocalVectorStore:
     def _to_llama_doc(self, doc: Document) -> LIDocument:
         return LIDocument(text=doc.text, metadata=doc.metadata)
 
+    def _get_existing_hashes(self) -> set[str]:
+        """Fetch existing doc hashes from ChromaDB in safe batches."""
+        total = self.collection.count()
+        if total == 0:
+            return set()
+        hashes = set()
+        batch_size = 5000
+        for offset in range(0, total, batch_size):
+            result = self.collection.get(
+                limit=batch_size, offset=offset, include=[]
+            )
+            hashes.update(result["ids"])
+        return hashes
+
     def add_documents(self, documents: list[Document]) -> int:
         """Add documents to the vector store one at a time. Returns count of new docs added."""
-        existing_ids = set(self.collection.get()["ids"]) if self.collection.count() > 0 else set()
+        existing = self._get_existing_hashes()
         added = 0
 
         for doc in documents:
             h = doc_hash(doc.text)
-            if h in existing_ids:
+            if h in existing:
                 continue
 
             try:
@@ -84,6 +98,7 @@ class LocalVectorStore:
                     show_progress=False,
                 )
                 added += 1
+                existing.add(h)
             except Exception as e:
                 logger.warning(f"Failed to index {doc.metadata.get('filename')}: {e}")
 
