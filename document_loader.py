@@ -90,37 +90,54 @@ def load_txt(file_path: Path) -> str:
 
 
 def load_image(file_path: Path) -> str:
-    """OCR an image file using Tesseract, with size/dimension guards."""
+    """OCR an image file using Tesseract, with size/dimension guards and hard timeout."""
+    import subprocess
+    import tempfile
+
     file_size = file_path.stat().st_size
 
     if file_size > MAX_OCR_FILE_SIZE:
         logger.warning(f"Skipping oversized image: {file_path.name}")
         return ""
 
-    # Skip tiny images (icons, thumbnails, cache fragments) — unlikely to have readable text
+    # Skip tiny images (icons, thumbnails, cache fragments)
     if file_size < 5_000:
         return ""
 
-    import pytesseract
     from PIL import Image
 
     img = Image.open(file_path)
 
     width, height = img.size
-    # Skip images too small to contain meaningful text
     if width < 50 or height < 50:
         return ""
 
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    max_dim = 4000
+    max_dim = 3000
     if width > max_dim or height > max_dim:
         ratio = min(max_dim / width, max_dim / height)
         img = img.resize((int(width * ratio), int(height * ratio)))
 
-    text = pytesseract.image_to_string(img, lang="eng", timeout=30)
-    return text.strip()
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+        img.save(tmp_path)
+
+    try:
+        result = subprocess.run(
+            ["tesseract", tmp_path, "stdout", "-l", "eng"],
+            capture_output=True, text=True, timeout=45,
+        )
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        logger.warning(f"OCR timed out (45s): {file_path.name}")
+        return ""
+    except Exception as e:
+        logger.warning(f"OCR failed for {file_path.name}: {e}")
+        return ""
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def load_pdf(file_path: Path) -> str:
@@ -140,18 +157,33 @@ def load_pdf(file_path: Path) -> str:
 
     if ocr_pages:
         try:
-            import pytesseract
+            import subprocess
+            import tempfile
+
             from pdf2image import convert_from_path
 
             images = convert_from_path(str(file_path), dpi=300)
+            ocr_done = 0
             for i in ocr_pages:
                 if i < len(images):
-                    ocr_text = pytesseract.image_to_string(
-                        images[i], lang="eng", timeout=30
-                    )
-                    if ocr_text and ocr_text.strip():
-                        pages.insert(i, f"[OCR Page {i + 1}]\n{ocr_text.strip()}")
-            logger.info(f"OCR'd {len(ocr_pages)} scanned pages in {file_path.name}")
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        tmp_path = tmp.name
+                        images[i].save(tmp_path)
+                    try:
+                        result = subprocess.run(
+                            ["tesseract", tmp_path, "stdout", "-l", "eng"],
+                            capture_output=True, text=True, timeout=45,
+                        )
+                        ocr_text = result.stdout.strip()
+                        if ocr_text:
+                            pages.insert(i, f"[OCR Page {i + 1}]\n{ocr_text}")
+                            ocr_done += 1
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"OCR timed out on page {i+1} of {file_path.name}")
+                    finally:
+                        Path(tmp_path).unlink(missing_ok=True)
+            if ocr_done:
+                logger.info(f"OCR'd {ocr_done} scanned pages in {file_path.name}")
         except Exception as e:
             logger.warning(f"OCR fallback failed for {file_path.name}: {e}")
 
