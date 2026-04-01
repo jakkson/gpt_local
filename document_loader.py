@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import os
+import signal
 from pathlib import Path
 from typing import Generator
 
@@ -21,6 +22,19 @@ logger = logging.getLogger(__name__)
 
 # macOS UF_DATALESS flag — set on cloud-only placeholder files (Dropbox, iCloud)
 _UF_DATALESS = 0x00000040
+
+# Max seconds to spend on a single file (OCR, parsing, etc.)
+FILE_TIMEOUT_SECONDS = 60
+# Max file size to attempt OCR on (50 MB)
+MAX_OCR_FILE_SIZE = 50 * 1024 * 1024
+
+
+class FileTimeoutError(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise FileTimeoutError("File processing timed out")
 
 
 def is_file_local(file_path: Path) -> bool:
@@ -74,14 +88,25 @@ def load_txt(file_path: Path) -> str:
 
 
 def load_image(file_path: Path) -> str:
-    """OCR an image file using Tesseract."""
+    """OCR an image file using Tesseract, with size guard and timeout."""
+    if file_path.stat().st_size > MAX_OCR_FILE_SIZE:
+        logger.warning(f"Skipping oversized image: {file_path.name}")
+        return ""
+
     import pytesseract
     from PIL import Image
 
     img = Image.open(file_path)
     if img.mode != "RGB":
         img = img.convert("RGB")
-    text = pytesseract.image_to_string(img, lang="eng")
+
+    width, height = img.size
+    max_dim = 4000
+    if width > max_dim or height > max_dim:
+        ratio = min(max_dim / width, max_dim / height)
+        img = img.resize((int(width * ratio), int(height * ratio)))
+
+    text = pytesseract.image_to_string(img, lang="eng", timeout=30)
     return text.strip()
 
 
@@ -108,7 +133,9 @@ def load_pdf(file_path: Path) -> str:
             images = convert_from_path(str(file_path), dpi=300)
             for i in ocr_pages:
                 if i < len(images):
-                    ocr_text = pytesseract.image_to_string(images[i], lang="eng")
+                    ocr_text = pytesseract.image_to_string(
+                        images[i], lang="eng", timeout=30
+                    )
                     if ocr_text and ocr_text.strip():
                         pages.insert(i, f"[OCR Page {i + 1}]\n{ocr_text.strip()}")
             logger.info(f"OCR'd {len(ocr_pages)} scanned pages in {file_path.name}")
@@ -260,9 +287,14 @@ def load_single_file(file_path: Path) -> Document | None:
         logger.info(f"Skipping offline file: {file_path.name}")
         return None
 
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(FILE_TIMEOUT_SECONDS)
+
     try:
         loader = LOADERS[ext]
         text = loader(file_path)
+        signal.alarm(0)
+
         if not text or not text.strip():
             logger.warning(f"Empty content: {file_path.name}")
             return None
@@ -275,12 +307,18 @@ def load_single_file(file_path: Path) -> Document | None:
         }
         return Document(text=text.strip(), metadata=metadata)
 
+    except FileTimeoutError:
+        logger.warning(f"Timed out after {FILE_TIMEOUT_SECONDS}s: {file_path.name}")
+        return None
     except OSError as e:
         logger.info(f"Skipping unavailable file: {file_path.name} ({e})")
         return None
     except Exception as e:
         logger.error(f"Failed to load {file_path.name}: {e}")
         return None
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
