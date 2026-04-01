@@ -45,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-BATCH_SIZE = 50
+BATCH_SIZE = 10
 
 
 def ingest_paths(store: LocalVectorStore, paths: list[Path]) -> int:
