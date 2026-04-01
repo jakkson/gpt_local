@@ -27,8 +27,8 @@ _UF_DATALESS = 0x00000040
 FILE_TIMEOUT_SECONDS = 60
 # Max file size to attempt OCR on (50 MB)
 MAX_OCR_FILE_SIZE = 50 * 1024 * 1024
-# Max text length per document (~100KB = ~120 chunks, safe for SQLite)
-MAX_TEXT_LENGTH = 100_000
+# Max text length per document (~25KB = ~30 chunks, safe for SQLite)
+MAX_TEXT_LENGTH = 25_000
 
 
 class FileTimeoutError(Exception):
