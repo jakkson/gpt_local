@@ -88,19 +88,30 @@ def load_txt(file_path: Path) -> str:
 
 
 def load_image(file_path: Path) -> str:
-    """OCR an image file using Tesseract, with size guard and timeout."""
-    if file_path.stat().st_size > MAX_OCR_FILE_SIZE:
+    """OCR an image file using Tesseract, with size/dimension guards."""
+    file_size = file_path.stat().st_size
+
+    if file_size > MAX_OCR_FILE_SIZE:
         logger.warning(f"Skipping oversized image: {file_path.name}")
+        return ""
+
+    # Skip tiny images (icons, thumbnails, cache fragments) — unlikely to have readable text
+    if file_size < 5_000:
         return ""
 
     import pytesseract
     from PIL import Image
 
     img = Image.open(file_path)
+
+    width, height = img.size
+    # Skip images too small to contain meaningful text
+    if width < 50 or height < 50:
+        return ""
+
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    width, height = img.size
     max_dim = 4000
     if width > max_dim or height > max_dim:
         ratio = min(max_dim / width, max_dim / height)
@@ -321,24 +332,43 @@ def load_single_file(file_path: Path) -> Document | None:
         signal.signal(signal.SIGALRM, old_handler)
 
 
+_SKIP_DIRS = {
+    ".git", "__pycache__", "node_modules", ".Trash",
+    "Cache", "Caches", "cache", "caches",
+    "CacheStorage", "GPUCache", "ShaderCache",
+    ".dropbox.cache", "com.apple.Safari",
+}
+
+import re
+_HEX_FILENAME = re.compile(r"^[0-9a-f]{2,}\.(?:jpg|jpeg|png|gif|bmp)$", re.IGNORECASE)
+
+
 def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
-    """Find all supported files in a directory, skipping offline/cloud-only files."""
+    """Find all supported files in a directory, skipping junk/offline/cache files."""
     files = []
-    skipped = 0
+    skipped_offline = 0
+    skipped_junk = 0
     pattern = "**/*" if recursive else "*"
     for path in directory.glob(pattern):
         if not path.is_file():
+            continue
+        if any(part in _SKIP_DIRS for part in path.parts):
             continue
         if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             continue
         if path.name.startswith("."):
             continue
+        if _HEX_FILENAME.match(path.name):
+            skipped_junk += 1
+            continue
         if not is_file_local(path):
-            skipped += 1
+            skipped_offline += 1
             continue
         files.append(path)
-    if skipped:
-        logger.info(f"Skipped {skipped} offline/cloud-only files in {directory}")
+    if skipped_offline:
+        logger.info(f"Skipped {skipped_offline} offline/cloud-only files in {directory}")
+    if skipped_junk:
+        logger.info(f"Skipped {skipped_junk} cache/thumbnail files in {directory}")
     return sorted(files)
 
 
