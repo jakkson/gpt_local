@@ -337,6 +337,10 @@ _SKIP_DIRS = {
     "Cache", "Caches", "cache", "caches",
     "CacheStorage", "GPUCache", "ShaderCache",
     ".dropbox.cache", "com.apple.Safari",
+    # Skip this project's own folders to avoid feedback loops
+    "local_gpt", "chroma_db", "venv", ".venv",
+    # Other non-document dirs
+    "site-packages", ".npm", ".pip", "dist", "build",
 }
 
 import re
