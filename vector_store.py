@@ -65,33 +65,31 @@ class LocalVectorStore:
         return LIDocument(text=doc.text, metadata=doc.metadata)
 
     def add_documents(self, documents: list[Document]) -> int:
-        """Add documents to the vector store. Returns count of new docs added."""
+        """Add documents to the vector store one at a time. Returns count of new docs added."""
         existing_ids = set(self.collection.get()["ids"]) if self.collection.count() > 0 else set()
-        new_docs = []
+        added = 0
 
         for doc in documents:
             h = doc_hash(doc.text)
-            if h not in existing_ids:
-                new_docs.append(doc)
-            else:
-                logger.info(f"Skipping duplicate: {doc.metadata.get('filename')}")
+            if h in existing_ids:
+                continue
 
-        if not new_docs:
-            logger.info("No new documents to add.")
-            return 0
+            try:
+                li_doc = self._to_llama_doc(doc)
+                storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+                VectorStoreIndex.from_documents(
+                    [li_doc],
+                    storage_context=storage_context,
+                    transformations=[self.splitter],
+                    show_progress=False,
+                )
+                added += 1
+            except Exception as e:
+                logger.warning(f"Failed to index {doc.metadata.get('filename')}: {e}")
 
-        li_docs = [self._to_llama_doc(d) for d in new_docs]
-
-        storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-        VectorStoreIndex.from_documents(
-            li_docs,
-            storage_context=storage_context,
-            transformations=[self.splitter],
-            show_progress=True,
-        )
-
-        logger.info(f"Added {len(new_docs)} documents ({self.collection.count()} total chunks)")
-        return len(new_docs)
+        if added:
+            logger.info(f"Added {added} documents ({self.collection.count()} total chunks)")
+        return added
 
     def get_index(self) -> VectorStoreIndex:
         """Get a queryable index from the existing vector store."""
