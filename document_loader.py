@@ -27,6 +27,8 @@ _UF_DATALESS = 0x00000040
 FILE_TIMEOUT_SECONDS = 60
 # Max file size to attempt OCR on (50 MB)
 MAX_OCR_FILE_SIZE = 50 * 1024 * 1024
+# Max text length per document (~100KB = ~120 chunks, safe for SQLite)
+MAX_TEXT_LENGTH = 100_000
 
 
 class FileTimeoutError(Exception):
@@ -310,13 +312,18 @@ def load_single_file(file_path: Path) -> Document | None:
             logger.warning(f"Empty content: {file_path.name}")
             return None
 
+        text = text.strip()
+        if len(text) > MAX_TEXT_LENGTH:
+            logger.info(f"Truncated {file_path.name} from {len(text)} to {MAX_TEXT_LENGTH} chars")
+            text = text[:MAX_TEXT_LENGTH]
+
         metadata = {
             "filename": file_path.name,
             "filepath": str(file_path.resolve()),
             "extension": ext,
             "size_bytes": file_path.stat().st_size,
         }
-        return Document(text=text.strip(), metadata=metadata)
+        return Document(text=text, metadata=metadata)
 
     except FileTimeoutError:
         logger.warning(f"Timed out after {FILE_TIMEOUT_SECONDS}s: {file_path.name}")
