@@ -90,9 +90,9 @@ def load_txt(file_path: Path) -> str:
 
 
 def load_image(file_path: Path) -> str:
-    """OCR an image file using Tesseract, with size/dimension guards and hard timeout."""
+    """OCR an image by passing it directly to Tesseract as a subprocess.
+    No Pillow in-process — avoids segfaults on corrupted images."""
     import subprocess
-    import tempfile
 
     file_size = file_path.stat().st_size
 
@@ -100,35 +100,16 @@ def load_image(file_path: Path) -> str:
         logger.warning(f"Skipping oversized image: {file_path.name}")
         return ""
 
-    # Skip tiny images (icons, thumbnails, cache fragments)
     if file_size < 5_000:
         return ""
 
-    from PIL import Image
-
-    img = Image.open(file_path)
-
-    width, height = img.size
-    if width < 50 or height < 50:
-        return ""
-
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-
-    max_dim = 3000
-    if width > max_dim or height > max_dim:
-        ratio = min(max_dim / width, max_dim / height)
-        img = img.resize((int(width * ratio), int(height * ratio)))
-
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        tmp_path = tmp.name
-        img.save(tmp_path)
-
     try:
         result = subprocess.run(
-            ["tesseract", tmp_path, "stdout", "-l", "eng"],
+            ["tesseract", str(file_path), "stdout", "-l", "eng"],
             capture_output=True, text=True, timeout=45,
         )
+        if result.returncode != 0:
+            return ""
         return result.stdout.strip()
     except subprocess.TimeoutExpired:
         logger.warning(f"OCR timed out (45s): {file_path.name}")
@@ -136,8 +117,6 @@ def load_image(file_path: Path) -> str:
     except Exception as e:
         logger.warning(f"OCR failed for {file_path.name}: {e}")
         return ""
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
 
 
 def load_pdf(file_path: Path) -> str:
