@@ -28,8 +28,25 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "local_gpt_docs"
 
 
-def get_embed_model() -> OllamaEmbedding:
-    return OllamaEmbedding(
+class NomicEmbedding(OllamaEmbedding):
+    """Wraps OllamaEmbedding to add the prefixes that nomic-embed-text requires
+    for correct asymmetric search (search_document: / search_query:)."""
+
+    def _get_text_embedding(self, text: str) -> list[float]:
+        return super()._get_text_embedding(f"search_document: {text}")
+
+    def _get_query_embedding(self, query: str) -> list[float]:
+        return super()._get_text_embedding(f"search_query: {query}")
+
+    async def _aget_text_embedding(self, text: str) -> list[float]:
+        return await super()._aget_text_embedding(f"search_document: {text}")
+
+    async def _aget_query_embedding(self, query: str) -> list[float]:
+        return await super()._aget_text_embedding(f"search_query: {query}")
+
+
+def get_embed_model() -> NomicEmbedding:
+    return NomicEmbedding(
         model_name=OLLAMA_EMBED_MODEL,
         base_url=OLLAMA_BASE_URL,
     )

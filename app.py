@@ -195,7 +195,19 @@ with st.sidebar:
 
 
 # --- Main Chat Area ---
-st.header("Chat with Your Documents")
+col_title, col_new = st.columns([4, 1])
+with col_title:
+    st.header("Chat with Your Documents")
+with col_new:
+    st.write("")
+    if st.button("New Chat", type="secondary", use_container_width=True):
+        st.session_state.messages = []
+        try:
+            engine = get_rag_engine()
+            engine.reset_chat()
+        except Exception:
+            pass
+        st.rerun()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
