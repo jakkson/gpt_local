@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 _UF_DATALESS = 0x00000040
 
 # Max seconds to spend on a single file (OCR, parsing, etc.)
-FILE_TIMEOUT_SECONDS = 60
+FILE_TIMEOUT_SECONDS = 300
 # Max file size to attempt OCR on (50 MB)
 MAX_OCR_FILE_SIZE = 50 * 1024 * 1024
 # Max text length per document (~25KB = ~30 chunks, safe for SQLite)
@@ -324,9 +324,6 @@ def load_single_file(file_path: Path) -> Document | None:
             return None
 
         text = text.strip()
-        if len(text) > MAX_TEXT_LENGTH:
-            logger.info(f"Truncated {file_path.name} from {len(text)} to {MAX_TEXT_LENGTH} chars")
-            text = text[:MAX_TEXT_LENGTH]
 
         metadata = {
             "filename": file_path.name,
