@@ -12,7 +12,12 @@ from llama_index.core.prompts.default_prompts import DEFAULT_TEXT_QA_PROMPT_TMPL
 from llama_index.core.prompts.prompt_type import PromptType
 from llama_index.llms.ollama import Ollama
 
-from config import HYBRID_FUSION_TOP_K, OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import (
+    HYBRID_FUSION_TOP_K,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    OLLAMA_REQUEST_TIMEOUT,
+)
 from hybrid_retrieval import build_retriever_query_engine
 from vector_store import LocalVectorStore
 
@@ -39,7 +44,7 @@ def get_llm() -> Ollama:
     return Ollama(
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
-        request_timeout=120.0,
+        request_timeout=OLLAMA_REQUEST_TIMEOUT,
     )
 
 
