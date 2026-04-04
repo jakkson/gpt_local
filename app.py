@@ -201,6 +201,11 @@ with st.sidebar:
             st.rerun()
 
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "last_trace_log" not in st.session_state:
+    st.session_state.last_trace_log = []
+
 # --- Main Chat Area (left) + live activity trace (right) ---
 left, right = st.columns([2.1, 1], gap="medium")
 
@@ -232,11 +237,6 @@ with left:
             except Exception:
                 pass
             st.rerun()
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "last_trace_log" not in st.session_state:
-        st.session_state.last_trace_log = []
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
