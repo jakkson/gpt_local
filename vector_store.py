@@ -150,4 +150,10 @@ class LocalVectorStore:
         self.chroma_client.delete_collection(COLLECTION_NAME)
         self.collection = self.chroma_client.get_or_create_collection(COLLECTION_NAME)
         self.vector_store = ChromaVectorStore(chroma_collection=self.collection)
+        try:
+            from hybrid_retrieval import invalidate_bm25_cache
+
+            invalidate_bm25_cache()
+        except ImportError:
+            pass
         logger.info("Vector store cleared.")

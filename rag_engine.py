@@ -9,7 +9,8 @@ from llama_index.core import Settings
 from llama_index.core.chat_engine import CondenseQuestionChatEngine
 from llama_index.llms.ollama import Ollama
 
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import HYBRID_FUSION_TOP_K, OLLAMA_BASE_URL, OLLAMA_MODEL
+from hybrid_retrieval import build_retriever_query_engine
 from vector_store import LocalVectorStore
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,10 @@ class RAGEngine:
         Settings.llm = self.llm
         self._chat_engine = None
 
-    def query(self, question: str, top_k: int = 5) -> dict:
+    def query(self, question: str, top_k: int | None = None) -> dict:
         """One-shot query: retrieve context + generate answer."""
-        index = self.store.get_index()
-        query_engine = index.as_query_engine(
-            similarity_top_k=top_k,
-            streaming=False,
-        )
+        k = top_k if top_k is not None else HYBRID_FUSION_TOP_K
+        query_engine = build_retriever_query_engine(self.store, self.llm, fusion_top_k=k)
         response = query_engine.query(question)
 
         sources = []
@@ -59,11 +57,11 @@ class RAGEngine:
             "sources": sources,
         }
 
-    def chat(self, message: str, top_k: int = 5) -> dict:
+    def chat(self, message: str, top_k: int | None = None) -> dict:
         """Conversational query with history condensation."""
         if self._chat_engine is None:
-            index = self.store.get_index()
-            query_engine = index.as_query_engine(similarity_top_k=top_k)
+            k = top_k if top_k is not None else HYBRID_FUSION_TOP_K
+            query_engine = build_retriever_query_engine(self.store, self.llm, fusion_top_k=k)
             self._chat_engine = CondenseQuestionChatEngine.from_defaults(
                 query_engine=query_engine,
                 llm=self.llm,

@@ -52,6 +52,24 @@ def _is_junk_text(text: str) -> bool:
     return False
 
 
+def _is_filesystem_path_dump_html(text: str, ext: str) -> bool:
+    """Skip HTML that is mostly sample-library / path listings (hurts hybrid search volume)."""
+    if ext not in (".html", ".htm"):
+        return False
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 40:
+        return False
+    sample = lines[:1000]
+    hits = 0
+    for ln in sample:
+        low = ln.lower()
+        if "/volumes/" in low or '.nksf"' in low or '.nka"' in low or '.ogg"' in low:
+            hits += 1
+        elif ln.count('","') >= 2 and ln.count("/") > 4:
+            hits += 1
+    return hits / len(sample) > 0.2
+
+
 class FileTimeoutError(Exception):
     pass
 
@@ -345,6 +363,10 @@ def load_single_file(file_path: Path) -> Document | None:
             return None
 
         text = text.strip()
+
+        if _is_filesystem_path_dump_html(text, ext):
+            logger.warning(f"Skipping path-listing HTML: {file_path.name}")
+            return None
 
         if _is_junk_text(text):
             logger.warning(f"Junk/binary content skipped: {file_path.name}")
