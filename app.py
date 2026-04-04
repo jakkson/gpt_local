@@ -192,6 +192,7 @@ with st.sidebar:
 
         if st.button("Reset Chat History"):
             st.session_state.messages = []
+            st.session_state.last_trace_log = []
             try:
                 engine = get_rag_engine()
                 engine.reset_chat()
@@ -209,7 +210,12 @@ with right:
     trace_panel = st.container(border=True)
     with trace_panel:
         trace_placeholder = st.empty()
-        trace_placeholder.caption("Send a message to see live steps here.")
+        if st.session_state.last_trace_log:
+            trace_placeholder.markdown(
+                "_Last search:_\n\n" + "\n\n".join(st.session_state.last_trace_log)
+            )
+        else:
+            trace_placeholder.caption("Send a message to see live steps here.")
 
 with left:
     col_title, col_new = st.columns([4, 1])
@@ -219,6 +225,7 @@ with left:
         st.write("")
         if st.button("New Chat", type="secondary", use_container_width=True):
             st.session_state.messages = []
+            st.session_state.last_trace_log = []
             try:
                 engine = get_rag_engine()
                 engine.reset_chat()
@@ -228,6 +235,8 @@ with left:
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "last_trace_log" not in st.session_state:
+        st.session_state.last_trace_log = []
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -278,6 +287,8 @@ with left:
                             f"**{src['filename']}**{score}\n\n"
                             f"_{src['text_preview']}_"
                         )
+
+        st.session_state.last_trace_log = list(trace_lines)
 
         st.session_state.messages.append({
             "role": "assistant",
