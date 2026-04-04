@@ -22,7 +22,13 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .stApp { max-width: 1200px; margin: 0 auto; }
+    .stApp { max-width: 1480px; margin: 0 auto; }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 0.75rem;
+        background: #16161e;
+    }
     .source-card {
         background: #1e1e2e;
         border: 1px solid #333;
@@ -194,65 +200,87 @@ with st.sidebar:
             st.rerun()
 
 
-# --- Main Chat Area ---
-col_title, col_new = st.columns([4, 1])
-with col_title:
-    st.header("Chat with Your Documents")
-with col_new:
-    st.write("")
-    if st.button("New Chat", type="secondary", use_container_width=True):
-        st.session_state.messages = []
-        try:
-            engine = get_rag_engine()
-            engine.reset_chat()
-        except Exception:
-            pass
-        st.rerun()
+# --- Main Chat Area (left) + live activity trace (right) ---
+left, right = st.columns([2.1, 1], gap="medium")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+with right:
+    st.subheader("Search activity")
+    st.caption("Steps for each question: retrieval, then the local LLM.")
+    trace_panel = st.container(border=True)
+    with trace_panel:
+        trace_placeholder = st.empty()
+        trace_placeholder.caption("Send a message to see live steps here.")
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if msg.get("sources"):
-            with st.expander(f"Sources ({len(msg['sources'])})"):
-                for src in msg["sources"]:
-                    score = f" | relevance: {src['score']}" if src.get("score") else ""
-                    st.markdown(
-                        f"**{src['filename']}**{score}\n\n"
-                        f"_{src['text_preview']}_"
-                    )
-
-if prompt := st.chat_input("Ask about your documents..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+with left:
+    col_title, col_new = st.columns([4, 1])
+    with col_title:
+        st.header("Chat with Your Documents")
+    with col_new:
+        st.write("")
+        if st.button("New Chat", type="secondary", use_container_width=True):
+            st.session_state.messages = []
             try:
                 engine = get_rag_engine()
-                result = engine.chat(prompt)
-                answer = result["answer"]
-                sources = result.get("sources", [])
-            except Exception as e:
-                answer = f"Error: {e}\n\nMake sure Ollama is running (`ollama serve`) and you have documents ingested."
-                sources = []
+                engine.reset_chat()
+            except Exception:
+                pass
+            st.rerun()
 
-        st.markdown(answer)
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-        if sources:
-            with st.expander(f"Sources ({len(sources)})"):
-                for src in sources:
-                    score = f" | relevance: {src['score']}" if src.get("score") else ""
-                    st.markdown(
-                        f"**{src['filename']}**{score}\n\n"
-                        f"_{src['text_preview']}_"
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("sources"):
+                with st.expander(f"Sources ({len(msg['sources'])})"):
+                    for src in msg["sources"]:
+                        score = f" | relevance: {src['score']}" if src.get("score") else ""
+                        st.markdown(
+                            f"**{src['filename']}**{score}\n\n"
+                            f"_{src['text_preview']}_"
+                        )
+
+    if prompt := st.chat_input("Ask about your documents..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        trace_lines: list[str] = []
+
+        def trace_sink(line: str) -> None:
+            trace_lines.append(line)
+            trace_placeholder.markdown("\n\n".join(trace_lines))
+
+        with st.chat_message("assistant"):
+            with st.spinner("Working…"):
+                try:
+                    engine = get_rag_engine()
+                    trace_sink("_Starting…_")
+                    result = engine.chat(prompt, trace_sink=trace_sink)
+                    answer = result["answer"]
+                    sources = result.get("sources", [])
+                except Exception as e:
+                    answer = (
+                        f"Error: {e}\n\nMake sure Ollama is running (`ollama serve`) "
+                        "and you have documents ingested."
                     )
+                    sources = []
+                    trace_sink(f"**Error:** `{e}`")
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer,
-        "sources": sources,
-    })
+            st.markdown(answer)
+
+            if sources:
+                with st.expander(f"Sources ({len(sources)})"):
+                    for src in sources:
+                        score = f" | relevance: {src['score']}" if src.get("score") else ""
+                        st.markdown(
+                            f"**{src['filename']}**{score}\n\n"
+                            f"_{src['text_preview']}_"
+                        )
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
+        })
