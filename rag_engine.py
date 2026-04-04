@@ -7,6 +7,9 @@ import logging
 
 from llama_index.core import Settings
 from llama_index.core.chat_engine import CondenseQuestionChatEngine
+from llama_index.core.prompts import PromptTemplate
+from llama_index.core.prompts.default_prompts import DEFAULT_TEXT_QA_PROMPT_TMPL
+from llama_index.core.prompts.prompt_type import PromptType
 from llama_index.llms.ollama import Ollama
 
 from config import HYBRID_FUSION_TOP_K, OLLAMA_BASE_URL, OLLAMA_MODEL
@@ -16,9 +19,20 @@ from vector_store import LocalVectorStore
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a helpful AI assistant with access to the user's personal documents and emails.
-Answer questions based on the retrieved context. If the context doesn't contain
-relevant information, say so honestly rather than making things up.
-When referencing information, mention which document or email it came from."""
+Answer from the retrieved context. If it does not contain enough information, say so clearly instead of guessing.
+Name the source file or email when you use a fact. If sources disagree, say that briefly."""
+
+
+def _text_qa_prompt() -> PromptTemplate:
+    head = (
+        SYSTEM_PROMPT.strip()
+        + "\n\n"
+        "Prefer concise answers; use bullet points for lists when it helps readability.\n\n"
+    )
+    return PromptTemplate(
+        head + DEFAULT_TEXT_QA_PROMPT_TMPL,
+        prompt_type=PromptType.QUESTION_ANSWER,
+    )
 
 
 def get_llm() -> Ollama:
@@ -41,7 +55,9 @@ class RAGEngine:
     def query(self, question: str, top_k: int | None = None) -> dict:
         """One-shot query: retrieve context + generate answer."""
         k = top_k if top_k is not None else HYBRID_FUSION_TOP_K
-        query_engine = build_retriever_query_engine(self.store, self.llm, fusion_top_k=k)
+        query_engine = build_retriever_query_engine(
+            self.store, self.llm, fusion_top_k=k, text_qa_template=_text_qa_prompt()
+        )
         response = query_engine.query(question)
 
         sources = []
@@ -61,7 +77,12 @@ class RAGEngine:
         """Conversational query with history condensation."""
         if self._chat_engine is None:
             k = top_k if top_k is not None else HYBRID_FUSION_TOP_K
-            query_engine = build_retriever_query_engine(self.store, self.llm, fusion_top_k=k)
+            query_engine = build_retriever_query_engine(
+                self.store,
+                self.llm,
+                fusion_top_k=k,
+                text_qa_template=_text_qa_prompt(),
+            )
             self._chat_engine = CondenseQuestionChatEngine.from_defaults(
                 query_engine=query_engine,
                 llm=self.llm,

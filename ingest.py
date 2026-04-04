@@ -21,6 +21,9 @@ Usage:
     # Clear the database and re-ingest
     python ingest.py --clear /path/to/docs
 
+    # Remove chunks whose filenames contain text (e.g. bad exports), then exit
+    python ingest.py --purge-filename-substring "Music Software Directory" --purge-only
+
     # Watch a folder for new files
     python ingest.py --watch /path/to/docs
 """
@@ -187,6 +190,21 @@ def main():
         action="store_true",
         help="Show vector store stats and exit",
     )
+    parser.add_argument(
+        "--purge-filename-substring",
+        action="append",
+        dest="purge_substrings",
+        metavar="TEXT",
+        help=(
+            "Delete indexed chunks whose filename contains TEXT (case-insensitive). "
+            "Repeat the flag for multiple patterns."
+        ),
+    )
+    parser.add_argument(
+        "--purge-only",
+        action="store_true",
+        help="With --purge-filename-substring, exit after purge (no folder ingest).",
+    )
 
     args = parser.parse_args()
     store = LocalVectorStore()
@@ -197,6 +215,15 @@ def main():
         for k, v in stats.items():
             print(f"  {k}: {v}")
         return
+
+    if args.purge_substrings:
+        removed = store.delete_chunks_by_filename_substrings(args.purge_substrings)
+        print(f"\nPurged {removed} chunk(s) matching filename substrings.")
+        if args.purge_only:
+            stats = store.get_stats()
+            print(f"Remaining chunks: {stats['total_chunks']}")
+            print("Restart Streamlit so the chat UI reloads the vector index.")
+            return
 
     if args.clear:
         logger.info("Clearing vector store...")

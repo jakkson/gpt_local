@@ -24,6 +24,14 @@ HYBRID_RRF_K = int(os.getenv("HYBRID_RRF_K", "60"))
 # Rebuild BM25 only when chunk count changes by this much (avoids rebuild every ingest batch)
 HYBRID_BM25_REBUILD_MIN_DELTA = int(os.getenv("HYBRID_BM25_REBUILD_MIN_DELTA", "2000"))
 
+# Comma-separated substrings; files whose name contains any (case-insensitive) are skipped at scan time
+_default_skip = "music software directory"
+SKIP_FILENAME_SUBSTRINGS: tuple[str, ...] = tuple(
+    s.strip().lower()
+    for s in os.getenv("SKIP_FILENAME_SUBSTRINGS", _default_skip).split(",")
+    if s.strip()
+)
+
 OUTLOOK_CLIENT_ID = os.getenv("OUTLOOK_CLIENT_ID", "")
 OUTLOOK_TENANT_ID = os.getenv("OUTLOOK_TENANT_ID", "")
 OUTLOOK_REDIRECT_URI = os.getenv("OUTLOOK_REDIRECT_URI", "http://localhost:8400")

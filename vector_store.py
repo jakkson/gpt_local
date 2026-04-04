@@ -145,6 +145,47 @@ class LocalVectorStore:
             "collection": COLLECTION_NAME,
         }
 
+    def delete_chunks_by_filename_substrings(self, substrings: list[str]) -> int:
+        """Remove chunks whose metadata filename contains any substring (case-insensitive)."""
+        if not substrings:
+            return 0
+        needles = [s.lower() for s in substrings if s.strip()]
+        if not needles:
+            return 0
+        ids_to_delete: list[str] = []
+        batch_size = 2000
+        total = self.collection.count()
+        for offset in range(0, total, batch_size):
+            result = self.collection.get(
+                limit=min(batch_size, total - offset),
+                offset=offset,
+                include=["metadatas"],
+            )
+            for i, cid in enumerate(result["ids"]):
+                meta = result["metadatas"][i] or {}
+                fn = (meta.get("filename") or "").lower()
+                if any(n in fn for n in needles):
+                    ids_to_delete.append(cid)
+        deleted = 0
+        delete_batch = 400
+        for i in range(0, len(ids_to_delete), delete_batch):
+            chunk = ids_to_delete[i : i + delete_batch]
+            self.collection.delete(ids=chunk)
+            deleted += len(chunk)
+        try:
+            from hybrid_retrieval import invalidate_bm25_cache
+
+            invalidate_bm25_cache()
+        except ImportError:
+            pass
+        self.vector_store = ChromaVectorStore(chroma_collection=self.collection)
+        logger.info(
+            "Deleted %s chunks matching filename substrings: %s",
+            deleted,
+            needles,
+        )
+        return deleted
+
     def clear(self):
         """Delete all documents from the store."""
         self.chroma_client.delete_collection(COLLECTION_NAME)

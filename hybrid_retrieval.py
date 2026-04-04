@@ -6,9 +6,12 @@ Improves recall for names, product terms, and manual sections that pure embeddin
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import chromadb
+
+if TYPE_CHECKING:
+    from llama_index.core.prompts import PromptTemplate
 from llama_index.core.base.base_retriever import BaseRetriever
 from llama_index.core.callbacks.base import CallbackManager
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -131,17 +134,30 @@ def _get_or_build_bm25(collection: chromadb.Collection) -> Optional[BM25Retrieve
     return _bm25_retriever
 
 
-def build_retriever_query_engine(store: LocalVectorStore, llm, fusion_top_k: int):
+def build_retriever_query_engine(
+    store: LocalVectorStore,
+    llm,
+    fusion_top_k: int,
+    text_qa_template: Optional["PromptTemplate"] = None,
+):
     """
     Query engine using hybrid RRF when enabled and BM25 can be built; else dense-only.
     """
+    qa_kw = {}
+    if text_qa_template is not None:
+        qa_kw["text_qa_template"] = text_qa_template
+
     index = store.get_index()
     if not HYBRID_ENABLED:
-        return index.as_query_engine(similarity_top_k=fusion_top_k, llm=llm)
+        return index.as_query_engine(
+            similarity_top_k=fusion_top_k, llm=llm, **qa_kw
+        )
 
     bm25 = _get_or_build_bm25(store.collection)
     if bm25 is None:
-        return index.as_query_engine(similarity_top_k=fusion_top_k, llm=llm)
+        return index.as_query_engine(
+            similarity_top_k=fusion_top_k, llm=llm, **qa_kw
+        )
 
     vector_retriever = index.as_retriever(similarity_top_k=HYBRID_VECTOR_CANDIDATES)
     hybrid = RRFHybridRetriever(
@@ -150,4 +166,4 @@ def build_retriever_query_engine(store: LocalVectorStore, llm, fusion_top_k: int
         rrf_k=HYBRID_RRF_K,
         fusion_top_k=fusion_top_k,
     )
-    return RetrieverQueryEngine.from_args(retriever=hybrid, llm=llm)
+    return RetrieverQueryEngine.from_args(retriever=hybrid, llm=llm, **qa_kw)

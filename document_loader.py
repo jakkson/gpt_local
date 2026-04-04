@@ -16,7 +16,7 @@ from typing import Generator
 
 import chardet
 
-from config import SUPPORTED_EXTENSIONS
+from config import SKIP_FILENAME_SUBSTRINGS, SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -414,6 +414,7 @@ def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
     files = []
     skipped_offline = 0
     skipped_junk = 0
+    skipped_name = 0
     pattern = "**/*" if recursive else "*"
     for path in directory.glob(pattern):
         if not path.is_file():
@@ -424,6 +425,11 @@ def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
             continue
         if path.name.startswith("."):
             continue
+        if SKIP_FILENAME_SUBSTRINGS:
+            plower = path.name.lower()
+            if any(sub in plower for sub in SKIP_FILENAME_SUBSTRINGS):
+                skipped_name += 1
+                continue
         if _HEX_FILENAME.match(path.name):
             skipped_junk += 1
             continue
@@ -435,6 +441,10 @@ def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
         logger.info(f"Skipped {skipped_offline} offline/cloud-only files in {directory}")
     if skipped_junk:
         logger.info(f"Skipped {skipped_junk} cache/thumbnail files in {directory}")
+    if skipped_name:
+        logger.info(
+            f"Skipped {skipped_name} files matching SKIP_FILENAME_SUBSTRINGS in {directory}"
+        )
     return sorted(files)
 
 
