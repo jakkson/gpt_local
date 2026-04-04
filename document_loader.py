@@ -31,6 +31,27 @@ MAX_OCR_FILE_SIZE = 50 * 1024 * 1024
 MAX_TEXT_LENGTH = 25_000
 
 
+def _is_junk_text(text: str) -> bool:
+    """Detect binary blobs, base64 data, and other non-meaningful content."""
+    if len(text) < 20:
+        return True
+    sample = text[:2000]
+    alnum = sum(c.isalnum() for c in sample)
+    alpha = sum(c.isalpha() for c in sample)
+    if alnum == 0:
+        return True
+    alpha_ratio = alpha / len(sample)
+    if alpha_ratio < 0.15:
+        return True
+    words = sample.split()
+    if not words:
+        return True
+    avg_word_len = sum(len(w) for w in words) / len(words)
+    if avg_word_len > 40:
+        return True
+    return False
+
+
 class FileTimeoutError(Exception):
     pass
 
@@ -324,6 +345,10 @@ def load_single_file(file_path: Path) -> Document | None:
             return None
 
         text = text.strip()
+
+        if _is_junk_text(text):
+            logger.warning(f"Junk/binary content skipped: {file_path.name}")
+            return None
 
         metadata = {
             "filename": file_path.name,

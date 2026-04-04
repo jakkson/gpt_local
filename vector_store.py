@@ -35,11 +35,17 @@ class NomicEmbedding(OllamaEmbedding):
     def _get_text_embedding(self, text: str) -> list[float]:
         return super()._get_text_embedding(f"search_document: {text}")
 
+    def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return [self._get_text_embedding(t) for t in texts]
+
     def _get_query_embedding(self, query: str) -> list[float]:
         return super()._get_text_embedding(f"search_query: {query}")
 
     async def _aget_text_embedding(self, text: str) -> list[float]:
         return await super()._aget_text_embedding(f"search_document: {text}")
+
+    async def _aget_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return [await self._aget_text_embedding(t) for t in texts]
 
     async def _aget_query_embedding(self, query: str) -> list[float]:
         return await super()._aget_text_embedding(f"search_query: {query}")
